@@ -29,6 +29,82 @@ impl Encoding {
     }
 }
 
+#[derive(Clone, Copy)]
+struct Preset {
+    required_cols: [Option<u8>; 30],
+}
+
+impl Preset {
+    fn unrestricted() -> Self {
+        Self {
+            required_cols: [None; 30],
+        }
+    }
+
+    fn assign_display_col(
+        required_cols: &mut [Option<u8>; 30],
+        index_by_char: &HashMap<char, usize>,
+        internal_col: u8,
+        display: [char; 3],
+        preset_name: &str,
+    ) -> Result<(), String> {
+        let [top, mid, bot] = display;
+        let internal_order = [mid, top, bot];
+        let indices = internal_order.map(|c| {
+            index_by_char.get(&c)
+                .copied()
+                .ok_or_else(|| format!("{preset_name} character `{c}` is not present in the alphabet"))
+        });
+        let indices = [indices[0].clone()?, indices[1].clone()?, indices[2].clone()?];
+        for (i, &index) in indices.iter().enumerate() {
+            if let Some(previous) = required_cols[index] {
+                return Err(format!(
+                    "{preset_name} character `{}` is assigned to multiple columns ({previous} and {internal_col})",
+                    internal_order[i],
+                ));
+            }
+            required_cols[index] = Some(internal_col);
+        }
+        Ok(())
+    }
+
+    fn new(
+        encoding: &Encoding,
+        preset_left: Option<[char; 3]>,
+        preset_right: Option<[char; 9]>,
+    ) -> Result<Self, String> {
+        const LEFT_COL: u8 = 6;
+        const RIGHT_COLS: [u8; 3] = [3, 4, 7];
+        let mut required_cols = [None; 30];
+        let index_by_char = encoding.0
+            .into_iter()
+            .enumerate()
+            .map(|(i, c)| (c, i))
+            .collect::<HashMap<_, _>>();
+
+        if let Some(preset_left) = preset_left {
+            Self::assign_display_col(&mut required_cols, &index_by_char, LEFT_COL, preset_left, "preset-left")?;
+        }
+
+        if let Some(preset_right) = preset_right {
+            for (display_col, &internal_col) in RIGHT_COLS.iter().enumerate() {
+                Self::assign_display_col(
+                    &mut required_cols,
+                    &index_by_char,
+                    internal_col,
+                    [preset_right[display_col], preset_right[display_col + 3], preset_right[display_col + 6]],
+                    "preset-right",
+                )?;
+            }
+        }
+        Ok(Self { required_cols })
+    }
+
+    fn required_col(&self, char_index: usize) -> Option<u8> {
+        self.required_cols[char_index]
+    }
+}
+
 
 struct Weights([[u64; 30]; 30]);
 
@@ -124,6 +200,7 @@ struct Generator {
     weights: Weights,
     cutoff: u64,
     total: f64,
+    preset: Preset,
     layout: IncompleteLayout,
     next: u8,
 }
@@ -152,6 +229,12 @@ impl Iterator for Generator {
             self.next = 8;
             return Some((layout, score));
         }
+        if let Some(required_col) = self.preset.required_col(self.layout.len()) {
+            if self.next != required_col {
+                self.next = if self.next < required_col { required_col } else { 8 };
+                return self.next();
+            }
+        }
         let score = self.layout.score() + self.weights.step_score(self.layout.len(), self.layout.col(self.next));
         if self.layout.is_col_full(self.next) || self.cutoff <= score {
             self.next += 1;
@@ -164,19 +247,30 @@ impl Iterator for Generator {
 }
 
 
-pub fn generator(alphabet: [char; 30], bigrams: HashMap<[char; 2], u64>, cutoff: f64) -> impl Iterator<Item = ([char; 30], f64)> {
+pub fn generator(
+    alphabet: [char; 30],
+    bigrams: HashMap<[char; 2], u64>,
+    cutoff: f64,
+    preset_left: Option<[char; 3]>,
+    preset_right: Option<[char; 9]>,
+) -> Result<impl Iterator<Item = ([char; 30], f64)>, String> {
     let encoding = Encoding::new(alphabet, &|char| bigrams.iter()
         .filter_map(|(bigram, w)| bigram.contains(char).then_some(w))
         .sum::<u64>());
+    let preset = match (preset_left, preset_right) {
+        (None, None) => Preset::unrestricted(),
+        _ => Preset::new(&encoding, preset_left, preset_right)?,
+    };
     let weights = Weights::new(&|bigram| bigrams.get(&encoding.decode_bigram(bigram)).copied().unwrap_or(0));
     let total = weights.total() as f64;
     let cutoff = (total * cutoff) as u64;
-    Generator {
+    Ok(Generator {
         weights,
         encoding,
         cutoff,
         total,
+        preset,
         layout: IncompleteLayout::new(),
         next: 0,
-    }
+    })
 }

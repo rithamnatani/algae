@@ -29,7 +29,26 @@ cargo run --release -- --precalculated --file monkeyracer_sfbs.json --cutoff 0.0
 Without `--file` the weights / corpus is loaded through stdio. Without
 `--precalculated` generator calcualtes weights based on provided text as `4 *
 sfbs + dsfbs`. `--alphabet` sets (if none is present) or overrides characters
-placed on a keyboard.
+placed on a keyboard. `--preset-left` and `--preset-right` fix displayed
+columns and constrain the search up front, so they reduce the amount of work
+instead of just filtering results afterward.
+
+Example:
+
+```sh
+cargo run --release -- --precalculated --file monkeyracer_sfbs.json --cutoff 0.006 --preset-left "b n x" --preset-right "a u . | o e i | ' / ,"
+```
+
+`--preset-left` expects 3 characters in top-to-bottom order for the displayed
+leftmost column, so `--preset-left "bnx"` is equivalent to
+`--preset-left "b n x"`.
+
+`--preset-right` expects 9 characters in row-major order for the rightmost
+3x3 block. Whitespace and `|` separators are ignored, so the example above is
+equivalent to `--preset-right "au.oei'/,"`.
+Because Algae fixes key order inside a column by character frequency, each
+displayed 3-key column must be ordered with the most frequent key in the
+middle, then the top key, then the bottom key.
 
 ## Theory
 
