@@ -46,9 +46,10 @@ leftmost column, so `--preset-left "bnx"` is equivalent to
 `--preset-right` expects 9 characters in row-major order for the rightmost
 3x3 block. Whitespace and `|` separators are ignored, so the example above is
 equivalent to `--preset-right "au.oei'/,"`.
-Because Algae fixes key order inside a column by character frequency, each
-displayed 3-key column must be ordered with the most frequent key in the
-middle, then the top key, then the bottom key.
+Both presets constrain the search up front, instead of filtering finished
+layouts afterward. Because Algae fixes key order inside a column by character
+frequency, each displayed 3-key column must be ordered with the most frequent
+key in the middle, then the top key, then the bottom key.
 
 ## Theory
 
